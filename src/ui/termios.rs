@@ -12,7 +12,7 @@ fn get_termios() -> io::Result<libc::termios> {
     }
 }
 
-///
+/// Set terminal attributes
 fn set_termios(termios: libc::termios) -> io::Result<()> {
     unsafe {
         if libc::tcsetattr(libc::STDIN_FILENO, libc::TCSAFLUSH, &termios) == 0 {

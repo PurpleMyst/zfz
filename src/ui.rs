@@ -27,6 +27,8 @@ impl Display {
 
     /// Print out a match taking care of highlighting
     fn print_match(&self, match_: Match) -> io::Result<()> {
+        use ansi::Style;
+
         let mut highlights = match_.highlight.into_iter().peekable();
 
         for (i, c) in match_.item.chars().enumerate() {
@@ -35,14 +37,13 @@ impl Display {
                 // If the group starts here ...
                 if highlight.0 == i {
                     // ... make the characters underlined & bold
-                    ansi::select_graphic_rendition(4)?;
-                    ansi::select_graphic_rendition(1)?;
+                    Style::set(&[Style::Bold, Style::Underlined])?;
                 }
 
                 // If the group stops here ...
                 if highlight.1 == i {
                     // ... reset all graphic attributes ...
-                    ansi::select_graphic_rendition(0)?;
+                    Style::reset()?;
 
                     // ... and move on to the next group
                     highlights.next();
@@ -53,7 +54,7 @@ impl Display {
         }
 
         // Regardless of what happened up there, reset all graphic attributes
-        ansi::select_graphic_rendition(0)?;
+        Style::reset()?;
 
         Ok(())
     }
@@ -65,9 +66,9 @@ impl Display {
 
         for match_ in matches {
             // Erase any leftovers in the line
-            ansi::erase_in_line(2)?;
+            ansi::erase_line()?;
             self.print_match(match_)?;
-            ansi::cursor_next_line(1)?;
+            ansi::cursor::move_down()?;
         }
 
         // If we have less matches than we did before, clear out the leftover lines
@@ -75,8 +76,8 @@ impl Display {
             if old_match_amount > match_amount {
                 // We move after erasing because the cursor starts on the first leftover line
                 for _ in 0..old_match_amount - match_amount {
-                    ansi::erase_in_line(2)?;
-                    ansi::cursor_next_line(1)?;
+                    ansi::erase_line()?;
+                    ansi::cursor::move_down()?;
                 }
             }
         }
@@ -105,14 +106,14 @@ impl Display {
         self.print_prompt()?;
 
         // Then save the current cursor position such that we can come back here
-        ansi::save_cursor_position()?;
+        ansi::cursor::save_position()?;
 
         // Print out the list of items on the line after the prompt
-        ansi::cursor_next_line(1)?;
+        ansi::cursor::move_down()?;
         self.print_items()?;
 
         // And make the user type at the end of the prompt
-        ansi::restore_cursor_position()?;
+        ansi::cursor::restore_position()?;
 
         let mut pattern = String::new();
         loop {
@@ -132,8 +133,7 @@ impl Display {
                     self.selector.set_pattern(&pattern);
 
                     // ... then clear out the prompt line ...
-                    ansi::cursor_horizontal_absolute(1)?;
-                    ansi::erase_in_line(2)?;
+                    ansi::erase_line()?;
 
                     // ... and print it out again ...
                     self.print_prompt()?;
@@ -141,10 +141,10 @@ impl Display {
                     io::stdout().flush()?;
 
                     // ... then print out the new matches
-                    ansi::save_cursor_position()?;
-                    ansi::cursor_next_line(1)?;
+                    ansi::cursor::save_position()?;
+                    ansi::cursor::move_down()?;
                     self.print_items()?;
-                    ansi::restore_cursor_position()?;
+                    ansi::cursor::restore_position()?;
                 }
 
                 // If the character is printable ...
@@ -158,10 +158,10 @@ impl Display {
                     io::stdout().flush()?;
 
                     // ... and print out the new matches, moving back to the prompt once done
-                    ansi::save_cursor_position()?;
-                    ansi::cursor_next_line(1)?;
+                    ansi::cursor::save_position()?;
+                    ansi::cursor::move_down()?;
                     self.print_items()?;
-                    ansi::restore_cursor_position()?;
+                    ansi::cursor::restore_position()?;
                 }
 
                 // Any other control characters are ignored
