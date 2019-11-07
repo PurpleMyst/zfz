@@ -25,23 +25,59 @@ impl Display {
         Ok(())
     }
 
+    /// Print out a match taking care of highlighting
+    fn print_match(&self, match_: Match) -> io::Result<()> {
+        let mut highlights = match_.highlight.into_iter().peekable();
+
+        for (i, c) in match_.item.chars().enumerate() {
+            // Get the current highlight group, if there is any
+            if let Some(highlight) = highlights.peek() {
+                // If the group starts here ...
+                if highlight.0 == i {
+                    // ... make the characters underlined & bold
+                    ansi::select_graphic_rendition(4)?;
+                    ansi::select_graphic_rendition(1)?;
+                }
+
+                // If the group stops here ...
+                if highlight.1 == i {
+                    // ... reset all graphic attributes ...
+                    ansi::select_graphic_rendition(0)?;
+
+                    // ... and move on to the next group
+                    highlights.next();
+                }
+            }
+
+            print!("{}", c);
+        }
+
+        // Regardless of what happened up there, reset all graphic attributes
+        ansi::select_graphic_rendition(0)?;
+
+        Ok(())
+    }
+
+    /// Print out the current matches
     fn print_items(&mut self) -> io::Result<()> {
         let matches = self.selector.get_matches();
         let match_amount = matches.len();
-        for item in matches {
-            print!("{}", item.item);
+
+        for match_ in matches {
+            self.print_match(match_)?;
             ansi::cursor_next_line(1)?;
         }
 
+        // If we have less matches than we did before, clear out the leftover lines
         if let Some(old_match_amount) = self.match_amount {
             if old_match_amount > match_amount {
+                // We move after erasing because the cursor starts on the first leftover line
                 for _ in 0..old_match_amount - match_amount {
                     ansi::erase_in_line(2)?;
                     ansi::cursor_next_line(1)?;
                 }
             }
         }
-
         self.match_amount = Some(match_amount);
 
         Ok(())

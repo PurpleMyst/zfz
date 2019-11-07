@@ -86,6 +86,11 @@ control_sequence! {
 }
 
 control_sequence! {
+    #[doc="Sets the appearance of the following characters"]
+    select_graphic_rendition: CSI n m
+}
+
+control_sequence! {
     #[doc="Saves the cursor position/state."]
     save_cursor_position: CSI s
 }
