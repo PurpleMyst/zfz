@@ -64,6 +64,8 @@ impl Display {
         let match_amount = matches.len();
 
         for match_ in matches {
+            // Erase any leftovers in the line
+            ansi::erase_in_line(2)?;
             self.print_match(match_)?;
             ansi::cursor_next_line(1)?;
         }
@@ -117,23 +119,53 @@ impl Display {
             let c = self.read_char()?;
 
             match c {
-                // If the user inputs Ctrl-C, bail out
+                // If the user inputs Ctrl-C ...
                 3 => {
+                    // ... bail out!
                     break;
                 }
 
-                _ => {
-                    pattern.push(c as char);
+                // If the user inputs a backspace ...
+                127 => {
+                    // ... remove the latest character and relay the change to the selector ...
+                    pattern.pop();
                     self.selector.set_pattern(&pattern);
 
-                    print!("{}", c as char);
+                    // ... then clear out the prompt line ...
+                    ansi::cursor_horizontal_absolute(1)?;
+                    ansi::erase_in_line(2)?;
+
+                    // ... and print it out again ...
+                    self.print_prompt()?;
+                    print!("{}", pattern);
                     io::stdout().flush()?;
 
+                    // ... then print out the new matches
                     ansi::save_cursor_position()?;
                     ansi::cursor_next_line(1)?;
                     self.print_items()?;
                     ansi::restore_cursor_position()?;
                 }
+
+                // If the character is printable ...
+                c if c >= 0x20 && c <= 0x7e => {
+                    // ... push it to the pattern and relay the change to the selector ...
+                    pattern.push(c as char);
+                    self.selector.set_pattern(&pattern);
+
+                    // ... echo it to the user ...
+                    print!("{}", c as char);
+                    io::stdout().flush()?;
+
+                    // ... and print out the new matches, moving back to the prompt once done
+                    ansi::save_cursor_position()?;
+                    ansi::cursor_next_line(1)?;
+                    self.print_items()?;
+                    ansi::restore_cursor_position()?;
+                }
+
+                // Any other control characters are ignored
+                c => eprintln!("control char {:?}", c),
             }
         }
 
