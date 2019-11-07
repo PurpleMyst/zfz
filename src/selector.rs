@@ -63,7 +63,7 @@ impl Selector for FixedStringSelector {
                 }
 
                 if pattern_chars.next().is_none() {
-                    let end = end.unwrap();
+                    let end = end.unwrap() + 1;
                     Some((idx, (end - pattern.len(), end)))
                 } else {
                     None
