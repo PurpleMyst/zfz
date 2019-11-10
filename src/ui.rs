@@ -5,10 +5,16 @@ use std::io;
 mod ansi;
 mod termios;
 
+use ansi::style::{Color, Style};
+
 pub struct Display {
     prompt: String,
     selector: Box<dyn Selector>,
     match_amount: Option<usize>,
+    selected: usize,
+
+    selected_style: Style,
+    highlight_style: Style,
 }
 
 impl Display {
@@ -17,6 +23,10 @@ impl Display {
             prompt: "> ".to_owned(),
             selector,
             match_amount: None,
+            selected: 0,
+
+            selected_style: Style::Background(Color::Standard(1)),
+            highlight_style: Style::Compound(vec![Style::Bold, Style::Underlined]),
         }
     }
 
@@ -26,9 +36,7 @@ impl Display {
     }
 
     /// Print out a match taking care of highlighting
-    fn print_match(&self, match_: Match) -> io::Result<()> {
-        use ansi::Style;
-
+    fn print_match(&self, index: usize, match_: Match) -> io::Result<()> {
         let mut highlights = match_.highlight.into_iter().peekable();
 
         for (i, c) in match_.item.chars().enumerate() {
@@ -36,25 +44,30 @@ impl Display {
             if let Some(highlight) = highlights.peek() {
                 // If the group starts here ...
                 if highlight.0 == i {
-                    // ... make the characters underlined & bold
-                    Style::set(&[Style::Bold, Style::Underlined])?;
+                    // ... apply the highlight style until the end of the group
+                    self.highlight_style.apply()?;
                 }
 
                 // If the group stops here ...
                 if highlight.1 == i {
                     // ... reset all graphic attributes ...
-                    Style::reset()?;
+                    Style::reset_all()?;
 
                     // ... and move on to the next group
                     highlights.next();
                 }
             }
 
+            // We must re-apply the selected style on every iteration due to the `reset_all` above
+            if index == self.selected {
+                self.selected_style.apply()?;
+            }
+
             print!("{}", c);
         }
 
         // Regardless of what happened up there, reset all graphic attributes
-        Style::reset()?;
+        Style::reset_all()?;
 
         Ok(())
     }
@@ -64,10 +77,14 @@ impl Display {
         let matches = self.selector.get_matches();
         let match_amount = matches.len();
 
-        for match_ in matches {
+        if self.selected >= match_amount {
+            self.selected = match_amount - 1;
+        }
+
+        for (index, match_) in matches.into_iter().enumerate() {
             // Erase any leftovers in the line
             ansi::erase_line()?;
-            self.print_match(match_)?;
+            self.print_match(index, match_)?;
             ansi::cursor::move_down()?;
         }
 
@@ -141,6 +158,31 @@ impl Display {
                     io::stdout().flush()?;
 
                     // ... then print out the new matches
+                    ansi::cursor::save_position()?;
+                    ansi::cursor::move_down()?;
+                    self.print_items()?;
+                    ansi::cursor::restore_position()?;
+                }
+
+                // ESCape sequence
+                //
+                // Arrow keys are represented as \033[ followed by any of A, B, C or D that each
+                // correspond to up, down, right and left
+                0o33 => {
+                    assert_eq!(self.read_char()?, b'[');
+
+                    // If we've pressed an arrow, vary the selected index accordingly ...
+                    match self.read_char()? {
+                        // Up
+                        b'A' => self.selected = self.selected.saturating_sub(1),
+
+                        // Down
+                        b'B' => self.selected = self.selected.saturating_add(1),
+
+                        _ => {}
+                    }
+
+                    // ... then redraw the matches
                     ansi::cursor::save_position()?;
                     ansi::cursor::move_down()?;
                     self.print_items()?;
