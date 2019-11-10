@@ -4,16 +4,18 @@ use std::io;
 
 mod ansi;
 mod termios;
+mod window;
 
 use ansi::style::{Color, Style};
+use window::Window;
 
 pub struct Display<'a> {
     prompt: String,
     selector: Selector<'a>,
     match_amount: usize,
     selected: usize,
-    start: usize,
-    rows: usize,
+
+    window: Window,
 
     selected_style: Style,
     highlight_style: Style,
@@ -26,8 +28,8 @@ impl<'a> Display<'a> {
             selector,
             match_amount: 0,
             selected: 0,
-            start: 0,
-            rows: 20,
+
+            window: Window::new(20),
 
             selected_style: Style::Background(Color::Standard(1)),
             highlight_style: Style::Compound(vec![Style::Bold, Style::Underlined]),
@@ -40,23 +42,23 @@ impl<'a> Display<'a> {
     }
 
     /// Print out a match, taking care of highlighting, on the current line
-    fn print_match(&self, index: usize, match_: &Match<'_>) -> io::Result<()> {
+    fn print_match(&self, index: usize, Match { item, highlight }: &Match<'a>) -> io::Result<()> {
         // Erase anything that's in the line
         ansi::erase_line()?;
 
-        let mut highlights = match_.highlight.iter().peekable();
+        let mut highlights = highlight.iter().peekable();
 
-        for (i, c) in match_.item.chars().enumerate() {
+        for (i, c) in item.char_indices() {
             // Get the current highlight group, if there is any
-            if let Some(highlight) = highlights.peek() {
+            if let Some((start, end)) = highlights.peek() {
                 // If the group starts here ...
-                if highlight.0 == i {
+                if *start == i {
                     // ... apply the highlight style until the end of the group
                     self.highlight_style.apply()?;
                 }
 
                 // If the group stops here ...
-                if highlight.1 == i {
+                if *end == i {
                     // ... reset all graphic attributes ...
                     Style::reset_all()?;
 
@@ -85,14 +87,14 @@ impl<'a> Display<'a> {
         ansi::cursor::save_position()?;
         ansi::cursor::move_down()?;
 
-        let matches = &self.selector.matches()[self.start..self.start + self.rows];
+        let matches = self.window.apply(self.selector.matches());
         let match_amount = matches.len();
 
         if self.selected >= match_amount {
             self.selected = match_amount.saturating_sub(1);
         }
 
-        for (index, match_) in matches.into_iter().enumerate() {
+        for (index, match_) in matches.iter().enumerate() {
             // Erase any leftovers in the line
             self.print_match(index, match_)?;
             ansi::cursor::move_down()?;
@@ -166,7 +168,7 @@ impl<'a> Display<'a> {
                 0o33 => {
                     assert_eq!(self.read_char()?, b'[');
 
-                    let matches = &self.selector.matches()[self.start..self.start + self.rows];
+                    let matches = self.window.apply(self.selector.matches());
 
                     // If we've pressed an arrow, vary the selected index accordingly ...
                     match self.read_char()? {
@@ -176,7 +178,7 @@ impl<'a> Display<'a> {
                                 // We're going up
                                 if self.selected == 0 {
                                     // If we're already at the top of the screen, scroll up
-                                    self.start = self.start.saturating_sub(1);
+                                    self.window.scroll_up();
                                     self.print_items()?;
                                     continue;
                                 }
@@ -187,7 +189,7 @@ impl<'a> Display<'a> {
                                 // We're going down.
                                 // If we're already at the end of the list, scroll down
                                 if self.selected == self.match_amount.saturating_sub(1) {
-                                    self.start += 1;
+                                    self.window.scroll_down();
                                     self.print_items()?;
                                     continue;
                                 }

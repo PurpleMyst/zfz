@@ -3,6 +3,7 @@ pub enum SelectorMode {
     FixedString,
 }
 
+#[derive(Debug)]
 pub struct Selector<'a> {
     mode: SelectorMode,
 
@@ -13,6 +14,7 @@ pub struct Selector<'a> {
     matches: Vec<Match<'a>>,
 }
 
+#[derive(Debug)]
 pub struct Match<'a> {
     pub item: &'a str,
     pub highlight: Vec<(usize, usize)>,
@@ -29,7 +31,7 @@ impl<'a> Selector<'a> {
         this
     }
 
-    pub fn matches(&'a self) -> &[Match<'a>] {
+    pub fn matches(&'a self) -> &'a [Match<'a>] {
         self.matches.as_ref()
     }
 
