@@ -12,6 +12,8 @@ pub struct Display<'a> {
     selector: Selector<'a>,
     match_amount: usize,
     selected: usize,
+    start: usize,
+    rows: usize,
 
     selected_style: Style,
     highlight_style: Style,
@@ -24,6 +26,8 @@ impl<'a> Display<'a> {
             selector,
             match_amount: 0,
             selected: 0,
+            start: 0,
+            rows: 20,
 
             selected_style: Style::Background(Color::Standard(1)),
             highlight_style: Style::Compound(vec![Style::Bold, Style::Underlined]),
@@ -37,6 +41,9 @@ impl<'a> Display<'a> {
 
     /// Print out a match, taking care of highlighting, on the current line
     fn print_match(&self, index: usize, match_: &Match<'_>) -> io::Result<()> {
+        // Erase anything that's in the line
+        ansi::erase_line()?;
+
         let mut highlights = match_.highlight.iter().peekable();
 
         for (i, c) in match_.item.chars().enumerate() {
@@ -78,7 +85,7 @@ impl<'a> Display<'a> {
         ansi::cursor::save_position()?;
         ansi::cursor::move_down()?;
 
-        let matches = self.selector.matches();
+        let matches = &self.selector.matches()[self.start..self.start + self.rows];
         let match_amount = matches.len();
 
         if self.selected >= match_amount {
@@ -87,7 +94,6 @@ impl<'a> Display<'a> {
 
         for (index, match_) in matches.into_iter().enumerate() {
             // Erase any leftovers in the line
-            ansi::erase_line()?;
             self.print_match(index, match_)?;
             ansi::cursor::move_down()?;
         }
@@ -160,7 +166,7 @@ impl<'a> Display<'a> {
                 0o33 => {
                     assert_eq!(self.read_char()?, b'[');
 
-                    let matches = self.selector.matches();
+                    let matches = &self.selector.matches()[self.start..self.start + self.rows];
 
                     // If we've pressed an arrow, vary the selected index accordingly ...
                     match self.read_char()? {
@@ -169,7 +175,9 @@ impl<'a> Display<'a> {
                             let old_selected = if c == b'A' {
                                 // We're going up
                                 if self.selected == 0 {
-                                    // If we're already at the top of the screen, stay there
+                                    // If we're already at the top of the screen, scroll up
+                                    self.start = self.start.saturating_sub(1);
+                                    self.print_items()?;
                                     continue;
                                 }
 
@@ -177,8 +185,10 @@ impl<'a> Display<'a> {
                                 self.selected + 1
                             } else {
                                 // We're going down.
-                                // If we're already at the end of the list, stay there
+                                // If we're already at the end of the list, scroll down
                                 if self.selected == self.match_amount.saturating_sub(1) {
+                                    self.start += 1;
+                                    self.print_items()?;
                                     continue;
                                 }
 
