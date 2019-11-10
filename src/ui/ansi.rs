@@ -158,7 +158,11 @@ pub mod cursor {
 
     /// Move the cursor to beginning of the next line
     pub fn move_down() -> io::Result<()> {
-        control_sequence::print(iter::once(1), 'E')
+        move_down_n(1)
+    }
+
+    pub fn move_down_n(n: usize) -> io::Result<()> {
+        control_sequence::print(iter::once(n), 'E')
     }
 
     /// Save the current cursor position

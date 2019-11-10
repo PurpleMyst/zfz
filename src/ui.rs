@@ -35,7 +35,7 @@ impl<'a> Display<'a> {
         Ok(())
     }
 
-    /// Print out a match taking care of highlighting
+    /// Print out a match, taking care of highlighting, on the current line
     fn print_match(&self, index: usize, match_: &Match<'_>) -> io::Result<()> {
         let mut highlights = match_.highlight.iter().peekable();
 
@@ -72,8 +72,12 @@ impl<'a> Display<'a> {
         Ok(())
     }
 
-    /// Print out the current matches
+    /// Print out the current matcheson the line below the current one, restoring the cursor
+    /// position afterwards
     fn print_items(&mut self) -> io::Result<()> {
+        ansi::cursor::save_position()?;
+        ansi::cursor::move_down()?;
+
         let matches = self.selector.matches();
         let match_amount = matches.len();
 
@@ -100,7 +104,7 @@ impl<'a> Display<'a> {
         }
         self.match_amount = Some(match_amount);
 
-        Ok(())
+        ansi::cursor::restore_position()
     }
 
     fn read_char(&self) -> io::Result<u8> {
@@ -119,18 +123,8 @@ impl<'a> Display<'a> {
 
         let _guard = termios::raw_mode()?;
 
-        // Print out our prompt
         self.print_prompt()?;
-
-        // Then save the current cursor position such that we can come back here
-        ansi::cursor::save_position()?;
-
-        // Print out the list of items on the line after the prompt
-        ansi::cursor::move_down()?;
         self.print_items()?;
-
-        // And make the user type at the end of the prompt
-        ansi::cursor::restore_position()?;
 
         let mut pattern = String::new();
         loop {
@@ -158,10 +152,7 @@ impl<'a> Display<'a> {
                     io::stdout().flush()?;
 
                     // ... then print out the new matches
-                    ansi::cursor::save_position()?;
-                    ansi::cursor::move_down()?;
                     self.print_items()?;
-                    ansi::cursor::restore_position()?;
                 }
 
                 // ESCape sequence
@@ -183,10 +174,7 @@ impl<'a> Display<'a> {
                     }
 
                     // ... then redraw the matches
-                    ansi::cursor::save_position()?;
-                    ansi::cursor::move_down()?;
                     self.print_items()?;
-                    ansi::cursor::restore_position()?;
                 }
 
                 // If the character is printable ...
@@ -200,10 +188,7 @@ impl<'a> Display<'a> {
                     io::stdout().flush()?;
 
                     // ... and print out the new matches, moving back to the prompt once done
-                    ansi::cursor::save_position()?;
-                    ansi::cursor::move_down()?;
                     self.print_items()?;
-                    ansi::cursor::restore_position()?;
                 }
 
                 // Any other control characters are ignored
