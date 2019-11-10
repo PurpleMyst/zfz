@@ -10,7 +10,7 @@ use ansi::style::{Color, Style};
 pub struct Display<'a> {
     prompt: String,
     selector: Selector<'a>,
-    match_amount: Option<usize>,
+    match_amount: usize,
     selected: usize,
 
     selected_style: Style,
@@ -22,7 +22,7 @@ impl<'a> Display<'a> {
         Self {
             prompt: "> ".to_owned(),
             selector,
-            match_amount: None,
+            match_amount: 0,
             selected: 0,
 
             selected_style: Style::Background(Color::Standard(1)),
@@ -93,16 +93,14 @@ impl<'a> Display<'a> {
         }
 
         // If we have less matches than we did before, clear out the leftover lines
-        if let Some(old_match_amount) = self.match_amount {
-            if old_match_amount > match_amount {
-                // We move after erasing because the cursor starts on the first leftover line
-                for _ in 0..old_match_amount - match_amount {
-                    ansi::erase_line()?;
-                    ansi::cursor::move_down()?;
-                }
+        if self.match_amount > match_amount {
+            // We move after erasing because the cursor starts on the first leftover line
+            for _ in 0..self.match_amount - match_amount {
+                ansi::erase_line()?;
+                ansi::cursor::move_down()?;
             }
         }
-        self.match_amount = Some(match_amount);
+        self.match_amount = match_amount;
 
         ansi::cursor::restore_position()
     }
@@ -179,13 +177,8 @@ impl<'a> Display<'a> {
                                 self.selected + 1
                             } else {
                                 // We're going down.
-                                if let Some(match_amount) = self.match_amount {
-                                    // If we're already at the end of the list, stay there
-                                    if self.selected == match_amount - 1 {
-                                        continue;
-                                    }
-                                } else {
-                                    // If there are no matches, we can't go anywhere
+                                // If we're already at the end of the list, stay there
+                                if self.selected == self.match_amount.saturating_sub(1) {
                                     continue;
                                 }
 
