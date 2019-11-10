@@ -7,9 +7,9 @@ mod termios;
 
 use ansi::style::{Color, Style};
 
-pub struct Display {
+pub struct Display<'a> {
     prompt: String,
-    selector: Box<dyn Selector>,
+    selector: Selector<'a>,
     match_amount: Option<usize>,
     selected: usize,
 
@@ -17,8 +17,8 @@ pub struct Display {
     highlight_style: Style,
 }
 
-impl Display {
-    pub fn new(selector: Box<dyn Selector>) -> Self {
+impl<'a> Display<'a> {
+    pub fn new(selector: Selector<'a>) -> Self {
         Self {
             prompt: "> ".to_owned(),
             selector,
@@ -36,8 +36,8 @@ impl Display {
     }
 
     /// Print out a match taking care of highlighting
-    fn print_match(&self, index: usize, match_: Match) -> io::Result<()> {
-        let mut highlights = match_.highlight.into_iter().peekable();
+    fn print_match(&self, index: usize, match_: &Match<'_>) -> io::Result<()> {
+        let mut highlights = match_.highlight.iter().peekable();
 
         for (i, c) in match_.item.chars().enumerate() {
             // Get the current highlight group, if there is any
@@ -74,7 +74,7 @@ impl Display {
 
     /// Print out the current matches
     fn print_items(&mut self) -> io::Result<()> {
-        let matches = self.selector.get_matches();
+        let matches = self.selector.matches();
         let match_amount = matches.len();
 
         if self.selected >= match_amount {
