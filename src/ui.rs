@@ -82,7 +82,7 @@ impl<'a> Display<'a> {
         let match_amount = matches.len();
 
         if self.selected >= match_amount {
-            self.selected = match_amount - 1;
+            self.selected = match_amount.saturating_sub(1);
         }
 
         for (index, match_) in matches.into_iter().enumerate() {
@@ -162,19 +162,55 @@ impl<'a> Display<'a> {
                 0o33 => {
                     assert_eq!(self.read_char()?, b'[');
 
+                    let matches = self.selector.matches();
+
                     // If we've pressed an arrow, vary the selected index accordingly ...
                     match self.read_char()? {
-                        // Up
-                        b'A' => self.selected = self.selected.saturating_sub(1),
+                        // We're going vertically
+                        c @ b'A' | c @ b'B' => {
+                            let old_selected = if c == b'A' {
+                                // We're going up
+                                if self.selected == 0 {
+                                    // If we're already at the top of the screen, stay there
+                                    continue;
+                                }
 
-                        // Down
-                        b'B' => self.selected = self.selected.saturating_add(1),
+                                self.selected -= 1;
+                                self.selected + 1
+                            } else {
+                                // We're going down.
+                                if let Some(match_amount) = self.match_amount {
+                                    // If we're already at the end of the list, stay there
+                                    if self.selected == match_amount - 1 {
+                                        continue;
+                                    }
+                                } else {
+                                    // If there are no matches, we can't go anywhere
+                                    continue;
+                                }
+
+                                self.selected += 1;
+                                self.selected - 1
+                            };
+
+                            // Save our current cursor position, which is on the prompt line
+                            ansi::cursor::save_position()?;
+
+                            // Redraw the old selected line
+                            ansi::cursor::move_down_n(old_selected + 1)?;
+                            self.print_match(old_selected, &matches[old_selected])?;
+
+                            // Draw the new selected line
+                            ansi::cursor::restore_position()?;
+                            ansi::cursor::move_down_n(self.selected + 1)?;
+                            self.print_match(self.selected, &matches[self.selected])?;
+
+                            // And go back to our prompt
+                            ansi::cursor::restore_position()?;
+                        }
 
                         _ => {}
                     }
-
-                    // ... then redraw the matches
-                    self.print_items()?;
                 }
 
                 // If the character is printable ...
@@ -187,7 +223,7 @@ impl<'a> Display<'a> {
                     print!("{}", c as char);
                     io::stdout().flush()?;
 
-                    // ... and print out the new matches, moving back to the prompt once done
+                    // ... and print out the new matches
                     self.print_items()?;
                 }
 
