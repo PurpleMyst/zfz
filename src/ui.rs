@@ -11,8 +11,10 @@ use window::Window;
 
 pub struct Display<'a> {
     prompt: String,
+
     selector: Selector<'a>,
     match_amount: usize,
+
     selected: usize,
 
     window: Window,
@@ -25,8 +27,10 @@ impl<'a> Display<'a> {
     pub fn new(selector: Selector<'a>) -> Self {
         Self {
             prompt: "> ".to_owned(),
+
             selector,
             match_amount: 0,
+
             selected: 0,
 
             window: Window::new(20),
@@ -127,115 +131,125 @@ impl<'a> Display<'a> {
     pub fn mainloop(&mut self) -> io::Result<()> {
         use io::Write;
 
-        let _guard = termios::raw_mode()?;
+        {
+            let _guard = termios::raw_mode()?;
 
-        self.print_prompt()?;
-        self.print_items()?;
+            self.print_prompt()?;
+            self.print_items()?;
 
-        let mut pattern = String::new();
-        loop {
-            let c = self.read_char()?;
+            let mut pattern = String::new();
+            loop {
+                let c = self.read_char()?;
 
-            match c {
-                // If the user inputs Ctrl-C ...
-                3 => {
-                    // ... bail out!
-                    break;
-                }
-
-                // If the user inputs a backspace ...
-                127 => {
-                    // ... remove the latest character and relay the change to the selector ...
-                    pattern.pop();
-                    self.selector.set_pattern(&pattern);
-
-                    // ... then clear out the prompt line ...
-                    ansi::erase_line()?;
-
-                    // ... and print it out again ...
-                    self.print_prompt()?;
-                    print!("{}", pattern);
-                    io::stdout().flush()?;
-
-                    // ... then print out the new matches
-                    self.print_items()?;
-                }
-
-                // ESCape sequence
-                //
-                // Arrow keys are represented as \033[ followed by any of A, B, C or D that each
-                // correspond to up, down, right and left
-                0o33 => {
-                    assert_eq!(self.read_char()?, b'[');
-
-                    let matches = self.window.apply(self.selector.matches());
-
-                    // If we've pressed an arrow, vary the selected index accordingly ...
-                    match self.read_char()? {
-                        // We're going vertically
-                        c @ b'A' | c @ b'B' => {
-                            let old_selected = if c == b'A' {
-                                // We're going up
-                                if self.selected == 0 {
-                                    // If we're already at the top of the screen, scroll up
-                                    self.window.scroll_up();
-                                    self.print_items()?;
-                                    continue;
-                                }
-
-                                self.selected -= 1;
-                                self.selected + 1
-                            } else {
-                                // We're going down.
-                                // If we're already at the end of the list, scroll down
-                                if self.selected == self.match_amount.saturating_sub(1) {
-                                    self.window.scroll_down();
-                                    self.print_items()?;
-                                    continue;
-                                }
-
-                                self.selected += 1;
-                                self.selected - 1
-                            };
-
-                            // Save our current cursor position, which is on the prompt line
-                            ansi::cursor::save_position()?;
-
-                            // Redraw the old selected line
-                            ansi::cursor::move_down_n(old_selected + 1)?;
-                            self.print_match(old_selected, &matches[old_selected])?;
-
-                            // Draw the new selected line
-                            ansi::cursor::restore_position()?;
-                            ansi::cursor::move_down_n(self.selected + 1)?;
-                            self.print_match(self.selected, &matches[self.selected])?;
-
-                            // And go back to our prompt
-                            ansi::cursor::restore_position()?;
-                        }
-
-                        _ => {}
+                match c {
+                    // If the user inputs Ctrl-C ...
+                    3 => {
+                        // ... bail out!
+                        break;
                     }
+
+                    // If the user inputs a backspace ...
+                    127 => {
+                        // ... remove the latest character and relay the change to the selector ...
+                        pattern.pop();
+                        self.selector.set_pattern(&pattern);
+
+                        // ... then clear out the prompt line ...
+                        ansi::erase_line()?;
+
+                        // ... and print it out again ...
+                        self.print_prompt()?;
+                        print!("{}", pattern);
+                        io::stdout().flush()?;
+
+                        // ... then print out the new matches
+                        self.print_items()?;
+                    }
+
+                    // ESCape sequence
+                    //
+                    // Arrow keys are represented as \033[ followed by any of A, B, C or D that each
+                    // correspond to up, down, right and left
+                    0o33 => {
+                        assert_eq!(self.read_char()?, b'[');
+
+                        let matches = self.window.apply(self.selector.matches());
+
+                        // If we've pressed an arrow, vary the selected index accordingly ...
+                        match self.read_char()? {
+                            // We're going vertically
+                            c @ b'A' | c @ b'B' => {
+                                let old_selected = if c == b'A' {
+                                    // We're going up
+                                    if self.selected == 0 {
+                                        // If we're already at the top of the screen, scroll up
+                                        self.window.scroll_up();
+                                        self.print_items()?;
+                                        continue;
+                                    }
+
+                                    self.selected -= 1;
+                                    self.selected + 1
+                                } else {
+                                    // We're going down.
+                                    // If we're already at the end of the list, scroll down
+                                    if self.selected == self.match_amount.saturating_sub(1) {
+                                        self.window.scroll_down();
+                                        self.print_items()?;
+                                        continue;
+                                    }
+
+                                    self.selected += 1;
+                                    self.selected - 1
+                                };
+
+                                // Save our current cursor position, which is on the prompt line
+                                ansi::cursor::save_position()?;
+
+                                // Redraw the old selected line
+                                ansi::cursor::move_down_n(old_selected + 1)?;
+                                self.print_match(old_selected, &matches[old_selected])?;
+
+                                // Draw the new selected line
+                                ansi::cursor::restore_position()?;
+                                ansi::cursor::move_down_n(self.selected + 1)?;
+                                self.print_match(self.selected, &matches[self.selected])?;
+
+                                // And go back to our prompt
+                                ansi::cursor::restore_position()?;
+                            }
+
+                            _ => {}
+                        }
+                    }
+
+                    // Enter
+                    13 => {
+                        break;
+                    }
+
+                    // If the character is printable ...
+                    c if c >= 0x20 && c <= 0x7e => {
+                        // ... push it to the pattern and relay the change to the selector ...
+                        pattern.push(c as char);
+                        self.selector.set_pattern(&pattern);
+
+                        // ... echo it to the user ...
+                        print!("{}", c as char);
+                        io::stdout().flush()?;
+
+                        // ... and print out the new matches
+                        self.print_items()?;
+                    }
+
+                    // Any other control characters are ignored
+                    c => eprintln!("control char {:?}", c),
                 }
-
-                // If the character is printable ...
-                c if c >= 0x20 && c <= 0x7e => {
-                    // ... push it to the pattern and relay the change to the selector ...
-                    pattern.push(c as char);
-                    self.selector.set_pattern(&pattern);
-
-                    // ... echo it to the user ...
-                    print!("{}", c as char);
-                    io::stdout().flush()?;
-
-                    // ... and print out the new matches
-                    self.print_items()?;
-                }
-
-                // Any other control characters are ignored
-                c => eprintln!("control char {:?}", c),
             }
-        }
+        } // exit raw mode
+
+        ansi::erase_line()?;
+        println!("{}", self.selector.matches()[self.selected].item);
 
         Ok(())
     }
