@@ -44,7 +44,7 @@ impl<'a> Selector<'a> {
                     let mut pattern_chars = pattern.chars();
                     let mut end = 0;
 
-                    for (idx, c) in item.chars().enumerate() {
+                    for (idx, c) in item.char_indices() {
                         if let Some(pattern_c) = pattern_chars.next() {
                             if pattern_c != c {
                                 pattern_chars = pattern.chars();
