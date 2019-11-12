@@ -184,7 +184,14 @@ impl<'a> Display<'a> {
                         match self.read_char()? {
                             // We're going vertically
                             c @ b'A' | c @ b'B' => {
-                                let old_selected = if c == b'A' {
+                                // Draw the previously selected line as unselected
+                                ansi::cursor::save_position()?;
+                                ansi::cursor::move_down_n(self.selected + 1)?;
+                                self.print_match(false, &matches[self.selected])?;
+                                ansi::cursor::restore_position()?;
+
+                                // Move the selection
+                                if c == b'A' {
                                     // We're going up
                                     if self.selected == 0 {
                                         // If we're already at the top of the screen, scroll up
@@ -194,9 +201,8 @@ impl<'a> Display<'a> {
                                     }
 
                                     self.selected -= 1;
-                                    self.selected + 1
                                 } else {
-                                    // We're going down.
+                                    // We're going down
                                     // If we're already at the end of the list, scroll down
                                     if self.selected == self.match_amount.saturating_sub(1) {
                                         self.window.scroll_down();
@@ -205,22 +211,12 @@ impl<'a> Display<'a> {
                                     }
 
                                     self.selected += 1;
-                                    self.selected - 1
-                                };
-
-                                // Save our current cursor position, which is on the prompt line
-                                ansi::cursor::save_position()?;
-
-                                // Redraw the old selected line
-                                ansi::cursor::move_down_n(old_selected + 1)?;
-                                self.print_match(false, &matches[old_selected])?;
+                                }
 
                                 // Draw the new selected line
-                                ansi::cursor::restore_position()?;
+                                ansi::cursor::save_position()?;
                                 ansi::cursor::move_down_n(self.selected + 1)?;
                                 self.print_match(true, &matches[self.selected])?;
-
-                                // And go back to our prompt
                                 ansi::cursor::restore_position()?;
 
                                 // Update the display
@@ -232,12 +228,12 @@ impl<'a> Display<'a> {
                     }
 
                     // Enter
-                    13 => {
+                    b'\r' => {
                         break;
                     }
 
                     // If the character is printable ...
-                    c if c >= 0x20 && c <= 0x7e => {
+                    c if c >= b' ' && c <= b'~' => {
                         // ... push it to the pattern and relay the change to the selector ...
                         pattern.push(c as char);
                         self.selector.set_pattern(&pattern);
