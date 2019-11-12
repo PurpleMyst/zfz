@@ -41,29 +41,10 @@ impl<'a> Selector<'a> {
                 .items
                 .iter()
                 .filter_map(|item| {
-                    let mut pattern_chars = pattern.chars();
-                    let mut end = 0;
-
-                    for (idx, c) in item.char_indices() {
-                        if let Some(pattern_c) = pattern_chars.next() {
-                            if pattern_c != c {
-                                pattern_chars = pattern.chars();
-                            } else {
-                                end = idx + 1;
-                            }
-                        } else {
-                            break;
-                        }
-                    }
-
-                    if pattern_chars.next().is_none() {
-                        Some(Match {
-                            item,
-                            highlight: vec![(end - pattern.len(), end)],
-                        })
-                    } else {
-                        None
-                    }
+                    item.find(pattern).map(|start| Match {
+                        item,
+                        highlight: vec![(start, start + pattern.len())],
+                    })
                 })
                 .collect(),
         }
