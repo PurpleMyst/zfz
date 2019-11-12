@@ -50,34 +50,32 @@ impl<'a> Display<'a> {
         // Erase anything that's in the line
         ansi::erase_line()?;
 
-        let mut highlights = highlight.iter().peekable();
-
-        for (i, c) in item.char_indices() {
-            // Get the current highlight group, if there is any
-            if let Some((start, end)) = highlights.peek() {
-                // If the group starts here ...
-                if *start == i {
-                    // ... apply the highlight style until the end of the group
-                    self.highlight_style.apply()?;
-                }
-
-                // If the group stops here ...
-                if *end == i {
-                    // ... reset all graphic attributes ...
-                    Style::reset_all()?;
-
-                    // ... and move on to the next group
-                    highlights.next();
-                }
-            }
-
-            // We must re-apply the selected style on every iteration due to the `reset_all` above
+        let print = |s| -> io::Result<()> {
             if index == self.selected {
                 self.selected_style.apply()?;
             }
+            print!("{}", s);
+            Ok(())
+        };
 
-            print!("{}", c);
-        }
+        let end = highlight
+            .iter()
+            .try_fold(0, |last, &(start, end)| -> io::Result<usize> {
+                // Print out the stuff between highlight groups normally
+                Style::reset_all()?;
+                print(&item[last..start])?;
+
+                // Print the inside of the group with the highlight style
+                self.highlight_style.apply()?;
+                print(&item[start..end])?;
+
+                // Pass on the ball
+                Ok(end)
+            })?;
+
+        // Print out what's leftover normally
+        Style::reset_all()?;
+        print(&item[end..])?;
 
         // Regardless of what happened up there, reset all graphic attributes
         Style::reset_all()?;
