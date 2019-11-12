@@ -102,13 +102,10 @@ impl<'a> Display<'a> {
             ansi::cursor::move_down()?;
         }
 
-        // If we have less matches than we did before, clear out the leftover lines
-        if self.match_amount > match_amount {
-            // We move after erasing because the cursor starts on the first leftover line
-            for _ in 0..self.match_amount - match_amount {
-                ansi::erase_line()?;
-                ansi::cursor::move_down()?;
-            }
+        // Clear out any leftover lines
+        for _ in 0..(self.match_amount.saturating_sub(match_amount)) {
+            ansi::erase_line()?;
+            ansi::cursor::move_down()?;
         }
         self.match_amount = match_amount;
 
@@ -251,8 +248,10 @@ impl<'a> Display<'a> {
             }
         } // exit raw mode
 
-        ansi::erase_line()?;
-        println!("{}", self.selector.matches()[self.selected].item);
+        if let Some(Match { item, .. }) = self.selector.matches().get(self.selected) {
+            ansi::erase_line()?;
+            println!("{}", item);
+        }
 
         Ok(())
     }

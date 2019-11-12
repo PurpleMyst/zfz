@@ -8,3 +8,6 @@ edition = "2018"
 
 [dependencies]
 libc = "0.2.65"
+
+[profile.release]
+debug = true
