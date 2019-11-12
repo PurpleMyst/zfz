@@ -36,7 +36,7 @@ mod control_sequence {
         // Print out the final bytes
         write!(stdout_lock, "{}", final_byte)?;
 
-        stdout_lock.flush()
+        Ok(())
     }
 }
 

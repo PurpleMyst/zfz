@@ -1,6 +1,6 @@
 use crate::selector::{Match, Selector};
 
-use std::io;
+use std::io::{self, Write};
 
 mod ansi;
 mod termios;
@@ -114,7 +114,11 @@ impl<'a> Display<'a> {
         }
         self.match_amount = match_amount;
 
-        ansi::cursor::restore_position()
+        ansi::cursor::restore_position()?;
+
+        io::stdout().flush()?;
+
+        Ok(())
     }
 
     fn read_char(&self) -> io::Result<u8> {
@@ -129,8 +133,6 @@ impl<'a> Display<'a> {
     }
 
     pub fn mainloop(&mut self) -> io::Result<()> {
-        use io::Write;
-
         {
             let _guard = termios::raw_mode()?;
 
@@ -217,6 +219,9 @@ impl<'a> Display<'a> {
 
                                 // And go back to our prompt
                                 ansi::cursor::restore_position()?;
+
+                                // Update the display
+                                io::stdout().flush()?;
                             }
 
                             _ => {}
