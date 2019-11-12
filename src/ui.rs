@@ -50,12 +50,14 @@ impl<'a> Display<'a> {
         // Erase anything that's in the line
         ansi::erase_line()?;
 
-        let print = |s| -> io::Result<()> {
+        let stdout = io::stdout();
+        let mut stdout_lock = stdout.lock();
+
+        let mut print = move |s| -> io::Result<()> {
             if index == self.selected {
                 self.selected_style.apply()?;
             }
-            print!("{}", s);
-            Ok(())
+            write!(stdout_lock, "{}", s)
         };
 
         let end = highlight
@@ -134,9 +136,14 @@ impl<'a> Display<'a> {
             self.print_prompt()?;
             self.print_items()?;
 
+            let stdout = io::stdout();
+
             let mut pattern = String::new();
             loop {
                 let c = self.read_char()?;
+
+                // this lock is reentrant, we can hold it as many times as we want
+                let mut stdout_lock = stdout.lock();
 
                 match c {
                     // If the user inputs Ctrl-C ...
@@ -156,8 +163,9 @@ impl<'a> Display<'a> {
 
                         // ... and print it out again ...
                         self.print_prompt()?;
-                        print!("{}", pattern);
-                        io::stdout().flush()?;
+
+                        write!(stdout_lock, "{}", pattern)?;
+                        stdout_lock.flush()?;
 
                         // ... then print out the new matches
                         self.print_items()?;
@@ -235,8 +243,8 @@ impl<'a> Display<'a> {
                         self.selector.set_pattern(&pattern);
 
                         // ... echo it to the user ...
-                        print!("{}", c as char);
-                        io::stdout().flush()?;
+                        write!(stdout_lock, "{}", c as char)?;
+                        stdout_lock.flush()?;
 
                         // ... and print out the new matches
                         self.print_items()?;
