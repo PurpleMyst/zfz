@@ -46,7 +46,7 @@ impl<'a> Display<'a> {
     }
 
     /// Print out a match, taking care of highlighting, on the current line
-    fn print_match(&self, index: usize, Match { item, highlight }: &Match<'a>) -> io::Result<()> {
+    fn print_match(&self, selected: bool, Match { item, highlight }: &Match<'a>) -> io::Result<()> {
         // Erase anything that's in the line
         ansi::erase_line()?;
 
@@ -54,7 +54,7 @@ impl<'a> Display<'a> {
         let mut stdout_lock = stdout.lock();
 
         let mut print = move |s| -> io::Result<()> {
-            if index == self.selected {
+            if selected {
                 self.selected_style.apply()?;
             }
             write!(stdout_lock, "{}", s)
@@ -100,7 +100,7 @@ impl<'a> Display<'a> {
 
         for (index, match_) in matches.iter().enumerate() {
             // Erase any leftovers in the line
-            self.print_match(index, match_)?;
+            self.print_match(index == self.selected, match_)?;
             ansi::cursor::move_down()?;
         }
 
@@ -213,12 +213,12 @@ impl<'a> Display<'a> {
 
                                 // Redraw the old selected line
                                 ansi::cursor::move_down_n(old_selected + 1)?;
-                                self.print_match(old_selected, &matches[old_selected])?;
+                                self.print_match(false, &matches[old_selected])?;
 
                                 // Draw the new selected line
                                 ansi::cursor::restore_position()?;
                                 ansi::cursor::move_down_n(self.selected + 1)?;
-                                self.print_match(self.selected, &matches[self.selected])?;
+                                self.print_match(true, &matches[self.selected])?;
 
                                 // And go back to our prompt
                                 ansi::cursor::restore_position()?;
