@@ -254,6 +254,12 @@ impl<'a> Display<'a> {
 
         if let Some(Match { item, .. }) = self.selector.matches().get(self.selected) {
             ansi::erase_line()?;
+            ansi::cursor::save_position()?;
+            for _ in 0..self.match_amount {
+                ansi::cursor::move_down()?;
+                ansi::erase_line()?;
+            }
+            ansi::cursor::restore_position()?;
             println!("{}", item);
         }
 
