@@ -18,11 +18,7 @@ impl Window {
 
     pub fn apply<'a, T>(&mut self, slice: &'a [T]) -> &'a [T] {
         let size = std::cmp::min(self.size, slice.len());
-
-        if self.offset >= slice.len() - size {
-            self.offset = slice.len() - size;
-        }
-
+        self.offset = std::cmp::min(self.offset, slice.len() - size);
         &slice[self.offset..self.offset + size]
     }
 }
