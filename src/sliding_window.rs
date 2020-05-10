@@ -14,16 +14,6 @@ impl SlidingWindow {
         Self { size, offset: 0 }
     }
 
-    /// The current size of the Window
-    pub fn size(&self) -> usize {
-        self.size
-    }
-
-    /// The current offset of the Window
-    pub fn offset(&self) -> usize {
-        self.offset
-    }
-
     /// Scroll the window down by one
     pub fn scroll_down(&mut self) {
         self.offset += 1;

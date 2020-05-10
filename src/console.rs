@@ -1,5 +1,11 @@
-use std::fmt;
-use std::io::{self, prelude::*};
+#![cfg_attr(windows, allow(dead_code))]
+
+use std::io;
+
+#[cfg(not(windows))]
+use std::io::prelude::*;
+
+#[cfg(not(windows))]
 use std::iter;
 
 /// A text color
@@ -36,6 +42,57 @@ pub enum Style {
 pub struct Console {
     #[cfg(not(windows))]
     prev_termios: libc::termios,
+}
+
+#[cfg(windows)]
+impl Console {
+    pub const CTRL_C: u8 = 3;
+    pub const BACKSPACE: u8 = 127;
+    pub const ESC: u8 = 0o33;
+
+    pub fn new() -> io::Result<Self> {
+        todo!()
+    }
+
+    fn apply_color(&self, _foreground: bool, _color: &Color) -> io::Result<()> {
+        todo!()
+    }
+
+    pub fn apply_style(&self, _style: &Style) -> io::Result<()> {
+        todo!()
+    }
+
+    pub fn reset_all(&self) -> io::Result<()> {
+        todo!()
+    }
+
+    /// Erase the current line and move the cursor to the beginning of it
+    pub fn erase_line(&self) -> io::Result<()> {
+        todo!()
+    }
+
+    pub fn move_down(&self) -> io::Result<()> {
+        self.move_down_n(1)
+    }
+
+    /// Move the cursor to the start of the line N down
+    pub fn move_down_n(&self, _n: usize) -> io::Result<()> {
+        todo!()
+    }
+
+    /// Save the current caret position
+    pub fn save_caret_position(&self) -> io::Result<()> {
+        todo!()
+    }
+
+    /// Restore a saved caret position
+    pub fn restore_caret_position(&self) -> io::Result<()> {
+        todo!()
+    }
+
+    pub fn read_one_char(&self) -> io::Result<u8> {
+        todo!()
+    }
 }
 
 #[cfg(not(windows))]
@@ -83,10 +140,10 @@ impl Console {
     }
 
     /// Print an ANSI control sequence
-    fn print_ansi<I>(&mut self, params: I, final_byte: char) -> io::Result<()>
+    fn print_ansi<I>(&self, params: I, final_byte: char) -> io::Result<()>
     where
         I: IntoIterator,
-        I::Item: fmt::Display,
+        I::Item: std::fmt::Display,
     {
         /// Introduces a control sequence
         const CSI: &str = "\x1b[";
@@ -112,7 +169,7 @@ impl Console {
         Ok(())
     }
 
-    fn apply_color(&mut self, foreground: bool, color: &Color) -> io::Result<()> {
+    fn apply_color(&self, foreground: bool, color: &Color) -> io::Result<()> {
         let first_byte = match foreground {
             true => 38,
             false => 48,
@@ -150,7 +207,7 @@ impl Console {
         }
     }
 
-    pub fn apply_style(&mut self, style: &Style) -> io::Result<()> {
+    pub fn apply_style(&self, style: &Style) -> io::Result<()> {
         match style {
             Style::Foreground(color) => self.apply_color(true, color),
             Style::Background(color) => self.apply_color(false, color),
@@ -160,37 +217,37 @@ impl Console {
         }
     }
 
-    pub fn reset_all(&mut self) -> io::Result<()> {
+    pub fn reset_all(&self) -> io::Result<()> {
         self.print_ansi(iter::once(0), Self::SGR_FINAL_BYTE)
     }
 
     /// Erase the current line and move the cursor to the beginning of it
-    pub fn erase_line(&mut self) -> io::Result<()> {
+    pub fn erase_line(&self) -> io::Result<()> {
         self.print_ansi(iter::once(1), 'G')?; // CHA: Cursor Horizontal Absolute
         self.print_ansi(iter::once(2), 'K')?; // EL: Erase in line
         Ok(())
     }
 
-    pub fn move_down(&mut self) -> io::Result<()> {
+    pub fn move_down(&self) -> io::Result<()> {
         self.move_down_n(1)
     }
 
     /// Move the cursor to the start of the line N down
-    pub fn move_down_n(&mut self, n: usize) -> io::Result<()> {
+    pub fn move_down_n(&self, n: usize) -> io::Result<()> {
         self.print_ansi(iter::once(n), 'E')
     }
 
     /// Save the current caret position
-    pub fn save_caret_position(&mut self) -> io::Result<()> {
+    pub fn save_caret_position(&self) -> io::Result<()> {
         self.print_ansi(iter::empty::<u8>(), 's')
     }
 
     /// Restore a saved caret position
-    pub fn restore_caret_position(&mut self) -> io::Result<()> {
+    pub fn restore_caret_position(&self) -> io::Result<()> {
         self.print_ansi(iter::empty::<u8>(), 'u')
     }
 
-    pub fn read_one_char(&mut self) -> io::Result<u8> {
+    pub fn read_one_char(&self) -> io::Result<u8> {
         unsafe {
             let mut c = 0u8;
             if libc::read(libc::STDIN_FILENO, &mut c as *mut _ as *mut _, 1) == 1 {
@@ -204,7 +261,7 @@ impl Console {
 
 #[cfg(not(windows))]
 impl Drop for Console {
-    fn drop(&mut self) {
+    fn drop(&self) {
         Self::set_termios(self.termios).expect("Could not restore termios")
     }
 }

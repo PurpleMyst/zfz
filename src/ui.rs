@@ -63,7 +63,7 @@ impl<'a> UI<'a> {
             .iter()
             .try_fold(0, |last, &(start, end)| -> io::Result<usize> {
                 // Print out the stuff between highlight groups normally
-                self.console.reset_all();
+                self.console.reset_all()?;
                 print(&item[last..start])?;
 
                 // Print the inside of the group with the highlight style
@@ -119,8 +119,6 @@ impl<'a> UI<'a> {
 
     pub fn mainloop(&mut self) -> io::Result<()> {
         {
-            let _guard = crate::termios::raw_mode()?;
-
             self.print_prompt()?;
             self.print_items()?;
 
@@ -202,7 +200,7 @@ impl<'a> UI<'a> {
                                 }
 
                                 // Draw the new selected line
-                                self.console.save_caret_position();
+                                self.console.save_caret_position()?;
                                 self.console.move_down_n(self.selected + 1)?;
                                 self.print_match(true, &matches[self.selected])?;
                                 self.console.restore_caret_position()?;
