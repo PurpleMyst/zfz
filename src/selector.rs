@@ -3,6 +3,7 @@ pub enum SelectorMode {
     FixedString,
 }
 
+// TODO: It might be interesting to use Pin<_> to make this own its items.
 #[derive(Debug)]
 pub struct Selector<'a> {
     mode: SelectorMode,
@@ -25,7 +26,7 @@ impl<'a> Selector<'a> {
         let mut this = Self {
             mode,
             items,
-            matches: Default::default(),
+            matches: Vec::new(),
         };
         this.set_pattern("");
         this

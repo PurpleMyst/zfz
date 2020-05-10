@@ -1,5 +1,7 @@
 mod selector;
 
+mod console;
+mod sliding_window;
 mod ui;
 
 fn main() {
@@ -7,10 +9,11 @@ fn main() {
 
     let words = words_contents.lines().collect::<Vec<&str>>();
 
-    ui::Display::new(selector::Selector::new(
+    ui::UI::new(selector::Selector::new(
         selector::SelectorMode::FixedString,
         words.as_slice(),
     ))
+    .unwrap()
     .mainloop()
     .unwrap();
 }

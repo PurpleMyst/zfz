@@ -1,15 +1,12 @@
+use std::io::{self, prelude::*};
+
+use crate::console::{Color, Console, Style};
 use crate::selector::{Match, Selector};
+use crate::sliding_window::SlidingWindow;
 
-use std::io::{self, Write};
+pub struct UI<'a> {
+    console: Console,
 
-mod ansi;
-mod termios;
-mod window;
-
-use ansi::style::{Color, Style};
-use window::Window;
-
-pub struct Display<'a> {
     prompt: String,
 
     selector: Selector<'a>,
@@ -17,15 +14,15 @@ pub struct Display<'a> {
 
     selected: usize,
 
-    window: Window,
+    window: SlidingWindow,
 
     selected_style: Style,
     highlight_style: Style,
 }
 
-impl<'a> Display<'a> {
-    pub fn new(selector: Selector<'a>) -> Self {
-        Self {
+impl<'a> UI<'a> {
+    pub fn new(selector: Selector<'a>) -> io::Result<Self> {
+        Ok(Self {
             prompt: "> ".to_owned(),
 
             selector,
@@ -33,11 +30,12 @@ impl<'a> Display<'a> {
 
             selected: 0,
 
-            window: Window::new(20),
+            window: SlidingWindow::new(20),
 
             selected_style: Style::Background(Color::Standard(1)),
             highlight_style: Style::Compound(vec![Style::Bold, Style::Underlined]),
-        }
+            console: Console::new()?,
+        })
     }
 
     fn print_prompt(&self) -> io::Result<()> {
@@ -48,15 +46,16 @@ impl<'a> Display<'a> {
     /// Print out a match, taking care of highlighting, on the current line
     fn print_match(&self, selected: bool, Match { item, highlight }: &Match<'a>) -> io::Result<()> {
         // Erase anything that's in the line
-        ansi::erase_line()?;
+        self.console.erase_line()?;
 
         let stdout = io::stdout();
         let mut stdout_lock = stdout.lock();
 
         let mut print = move |s| -> io::Result<()> {
             if selected {
-                self.selected_style.apply()?;
+                self.console.apply_style(&self.selected_style)?;
             }
+
             write!(stdout_lock, "{}", s)
         };
 
@@ -64,11 +63,11 @@ impl<'a> Display<'a> {
             .iter()
             .try_fold(0, |last, &(start, end)| -> io::Result<usize> {
                 // Print out the stuff between highlight groups normally
-                Style::reset_all()?;
+                self.console.reset_all();
                 print(&item[last..start])?;
 
                 // Print the inside of the group with the highlight style
-                self.highlight_style.apply()?;
+                self.console.apply_style(&self.highlight_style)?;
                 print(&item[start..end])?;
 
                 // Pass on the ball
@@ -76,11 +75,11 @@ impl<'a> Display<'a> {
             })?;
 
         // Print out what's leftover normally
-        Style::reset_all()?;
+        self.console.reset_all()?;
         print(&item[end..])?;
 
         // Regardless of what happened up there, reset all graphic attributes
-        Style::reset_all()?;
+        self.console.reset_all()?;
 
         Ok(())
     }
@@ -88,8 +87,8 @@ impl<'a> Display<'a> {
     /// Print out the current matcheson the line below the current one, restoring the cursor
     /// position afterwards
     fn print_items(&mut self) -> io::Result<()> {
-        ansi::cursor::save_position()?;
-        ansi::cursor::move_down()?;
+        self.console.save_caret_position()?;
+        self.console.move_down()?;
 
         let matches = self.window.apply(self.selector.matches());
         let match_amount = matches.len();
@@ -101,37 +100,26 @@ impl<'a> Display<'a> {
         for (index, match_) in matches.iter().enumerate() {
             // Erase any leftovers in the line
             self.print_match(index == self.selected, match_)?;
-            ansi::cursor::move_down()?;
+            self.console.move_down()?;
         }
 
         // Clear out any leftover lines
         for _ in 0..(self.match_amount.saturating_sub(match_amount)) {
-            ansi::erase_line()?;
-            ansi::cursor::move_down()?;
+            self.console.erase_line()?;
+            self.console.move_down()?;
         }
         self.match_amount = match_amount;
 
-        ansi::cursor::restore_position()?;
+        self.console.restore_caret_position()?;
 
         io::stdout().flush()?;
 
         Ok(())
     }
 
-    fn read_char(&self) -> io::Result<u8> {
-        unsafe {
-            let mut c = 0u8;
-            if libc::read(libc::STDIN_FILENO, &mut c as *mut _ as *mut _, 1) == 1 {
-                Ok(c)
-            } else {
-                Err(io::Error::from_raw_os_error(*libc::__errno_location()))
-            }
-        }
-    }
-
     pub fn mainloop(&mut self) -> io::Result<()> {
         {
-            let _guard = termios::raw_mode()?;
+            let _guard = crate::termios::raw_mode()?;
 
             self.print_prompt()?;
             self.print_items()?;
@@ -140,26 +128,26 @@ impl<'a> Display<'a> {
 
             let mut pattern = String::new();
             loop {
-                let c = self.read_char()?;
+                let c = self.console.read_one_char()?;
 
                 // this lock is reentrant, we can hold it as many times as we want
                 let mut stdout_lock = stdout.lock();
 
                 match c {
                     // If the user inputs Ctrl-C ...
-                    3 => {
+                    Console::CTRL_C => {
                         // ... bail out!
                         break;
                     }
 
                     // If the user inputs a backspace ...
-                    127 => {
+                    Console::BACKSPACE => {
                         // ... remove the latest character and relay the change to the selector ...
                         pattern.pop();
                         self.selector.set_pattern(&pattern);
 
                         // ... then clear out the prompt line ...
-                        ansi::erase_line()?;
+                        self.console.erase_line()?;
 
                         // ... and print it out again ...
                         self.print_prompt()?;
@@ -175,20 +163,20 @@ impl<'a> Display<'a> {
                     //
                     // Arrow keys are represented as \033[ followed by any of A, B, C or D that each
                     // correspond to up, down, right and left
-                    0o33 => {
-                        assert_eq!(self.read_char()?, b'[');
+                    Console::ESC => {
+                        assert_eq!(self.console.read_one_char()?, b'[');
 
                         let matches = self.window.apply(self.selector.matches());
 
                         // If we've pressed an arrow, vary the selected index accordingly ...
-                        match self.read_char()? {
+                        match self.console.read_one_char()? {
                             // We're going vertically
                             c @ b'A' | c @ b'B' => {
                                 // Draw the previously selected line as unselected
-                                ansi::cursor::save_position()?;
-                                ansi::cursor::move_down_n(self.selected + 1)?;
+                                self.console.save_caret_position()?;
+                                self.console.move_down_n(self.selected + 1)?;
                                 self.print_match(false, &matches[self.selected])?;
-                                ansi::cursor::restore_position()?;
+                                self.console.restore_caret_position()?;
 
                                 // Move the selection
                                 if c == b'A' {
@@ -214,10 +202,10 @@ impl<'a> Display<'a> {
                                 }
 
                                 // Draw the new selected line
-                                ansi::cursor::save_position()?;
-                                ansi::cursor::move_down_n(self.selected + 1)?;
+                                self.console.save_caret_position();
+                                self.console.move_down_n(self.selected + 1)?;
                                 self.print_match(true, &matches[self.selected])?;
-                                ansi::cursor::restore_position()?;
+                                self.console.restore_caret_position()?;
 
                                 // Update the display
                                 io::stdout().flush()?;
@@ -253,13 +241,13 @@ impl<'a> Display<'a> {
         } // exit raw mode
 
         if let Some(Match { item, .. }) = self.selector.matches().get(self.selected) {
-            ansi::erase_line()?;
-            ansi::cursor::save_position()?;
+            self.console.erase_line()?;
+            self.console.save_caret_position()?;
             for _ in 0..self.match_amount {
-                ansi::cursor::move_down()?;
-                ansi::erase_line()?;
+                self.console.move_down()?;
+                self.console.erase_line()?;
             }
-            ansi::cursor::restore_position()?;
+            self.console.restore_caret_position()?;
             println!("{}", item);
         }
 
