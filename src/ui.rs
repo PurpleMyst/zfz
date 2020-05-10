@@ -38,8 +38,8 @@ impl<'a> UI<'a> {
         })
     }
 
-    fn print_prompt(&self) -> io::Result<()> {
-        print!("{}", self.prompt);
+    fn print_prompt(&mut self) -> io::Result<()> {
+        write!(self.console, "{}", self.prompt)?;
         Ok(())
     }
 
@@ -246,7 +246,7 @@ impl<'a> UI<'a> {
                 self.console.erase_line()?;
             }
             self.console.restore_caret_position()?;
-            println!("{}", item);
+            writeln!(self.console, "{}", item)?;
         }
 
         Ok(())
