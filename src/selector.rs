@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::str::FromStr;
 
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 
@@ -6,6 +6,18 @@ use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 pub enum SelectorMode {
     FixedString,
     Fuzzy,
+}
+
+impl FromStr for SelectorMode {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "fixed" => Ok(Self::FixedString),
+            "fuzzy" => Ok(Self::Fuzzy),
+            _ => Err("expected fixed or fuzzy"),
+        }
+    }
 }
 
 // TODO: It might be interesting to use Pin<_> to make this own its items.
