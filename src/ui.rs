@@ -8,7 +8,7 @@ use crossterm::{
     event::{Event, KeyCode, KeyModifiers},
     queue,
     style::{Attribute, Color, ContentStyle, Print, PrintStyledContent},
-    terminal::{Clear, ClearType},
+    terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
 };
 
 pub struct UI<'a> {
@@ -136,6 +136,8 @@ impl<'a> UI<'a> {
     }
 
     pub fn mainloop(mut self) -> crossterm::Result<()> {
+        enable_raw_mode()?;
+
         let stderr_lock = io::stderr();
         let mut stderr = stderr_lock.lock();
 
@@ -261,6 +263,8 @@ impl<'a> UI<'a> {
                 | KeyCode::Null => {}
             }
         }
+
+        disable_raw_mode()?;
 
         if let Some(Match { item, .. }) = self.selector.matches().get(self.selected) {
             queue!(
