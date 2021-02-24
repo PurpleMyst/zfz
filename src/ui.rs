@@ -1,12 +1,17 @@
 use std::io::{self, prelude::*};
 
-use crate::console::{Color, Console, Style};
 use crate::selector::{Match, Selector};
 use crate::sliding_window::SlidingWindow;
 
-pub struct UI<'a> {
-    console: Console,
+use crossterm::{
+    cursor::{MoveToColumn, MoveToNextLine, RestorePosition, SavePosition},
+    event::{Event, KeyCode, KeyModifiers},
+    queue,
+    style::{Attribute, Color, ContentStyle, Print, PrintStyledContent},
+    terminal::{Clear, ClearType},
+};
 
+pub struct UI<'a> {
     prompt: String,
 
     selector: Selector<'a>,
@@ -16,8 +21,16 @@ pub struct UI<'a> {
 
     window: SlidingWindow,
 
-    selected_style: Style,
-    highlight_style: Style,
+    selected_style: ContentStyle,
+    highlight_style: ContentStyle,
+}
+
+fn merge(a: ContentStyle, b: ContentStyle) -> ContentStyle {
+    ContentStyle {
+        foreground_color: b.foreground_color.or(a.foreground_color),
+        background_color: b.background_color.or(a.background_color),
+        attributes: a.attributes | b.attributes,
+    }
 }
 
 impl<'a> UI<'a> {
@@ -32,63 +45,69 @@ impl<'a> UI<'a> {
 
             window: SlidingWindow::new(20),
 
-            selected_style: Style::Background(Color::Standard(1)),
-            highlight_style: Style::Compound(vec![Style::Bold, Style::Underlined]),
-            console: Console::new()?,
+            selected_style: ContentStyle::new().background(Color::AnsiValue(1)),
+            highlight_style: ContentStyle::new()
+                .attribute(Attribute::Bold)
+                .attribute(Attribute::Underlined),
         })
     }
 
-    fn print_prompt(&mut self) -> io::Result<()> {
-        write!(self.console, "{}", self.prompt)?;
-        Ok(())
+    fn print_prompt(&mut self) -> crossterm::Result<()> {
+        queue!(io::stderr(), Print(&self.prompt))
     }
 
     /// Print out a match, taking care of highlighting, on the current line
-    fn print_match(&self, selected: bool, Match { item, highlight }: &Match<'a>) -> io::Result<()> {
+    fn print_match(
+        &self,
+        selected: bool,
+        Match { item, highlight }: &Match<'a>,
+    ) -> crossterm::Result<()> {
+        let stderr_lock = io::stderr();
+        let mut stderr = stderr_lock.lock();
+
         // Erase anything that's in the line
-        self.console.erase_line()?;
+        queue!(stderr, Clear(ClearType::CurrentLine), MoveToColumn(0))?;
 
-        let stdout = io::stdout();
-        let mut stdout_lock = stdout.lock();
+        let mut print = move |style: Option<ContentStyle>, s| -> crossterm::Result<()> {
+            let style = merge(
+                style.unwrap_or(ContentStyle::new()),
+                if selected {
+                    self.selected_style
+                } else {
+                    ContentStyle::new()
+                },
+            );
 
-        let mut print = move |s| -> io::Result<()> {
-            if selected {
-                self.console.apply_style(&self.selected_style)?;
-            }
-
-            write!(stdout_lock, "{}", s)
+            queue!(stderr, PrintStyledContent(style.apply(s)))
         };
 
-        let end = highlight
-            .iter()
-            .try_fold(0, |last, &(start, end)| -> io::Result<usize> {
-                // Print out the stuff between highlight groups normally
-                self.console.reset_all()?;
-                print(&item[last..start])?;
+        let end =
+            highlight
+                .iter()
+                .try_fold(0, |last, &(start, end)| -> crossterm::Result<usize> {
+                    // Print out the stuff between highlight groups normally
+                    print(None, &item[last..start])?;
 
-                // Print the inside of the group with the highlight style
-                self.console.apply_style(&self.highlight_style)?;
-                print(&item[start..end])?;
+                    // Print the inside of the group with the highlight style
+                    print(Some(self.highlight_style), &item[start..end])?;
 
-                // Pass on the ball
-                Ok(end)
-            })?;
+                    // Pass on the ball
+                    Ok(end)
+                })?;
 
         // Print out what's leftover normally
-        self.console.reset_all()?;
-        print(&item[end..])?;
-
-        // Regardless of what happened up there, reset all graphic attributes
-        self.console.reset_all()?;
+        print(None, &item[end..])?;
 
         Ok(())
     }
 
     /// Print out the current matcheson the line below the current one, restoring the cursor
     /// position afterwards
-    fn print_items(&mut self) -> io::Result<()> {
-        self.console.save_caret_position()?;
-        self.console.move_down()?;
+    fn print_items(&mut self) -> crossterm::Result<()> {
+        let stderr_lock = io::stderr();
+        let mut stderr = stderr_lock.lock();
+
+        queue!(stderr, SavePosition, MoveToNextLine(1))?;
 
         let matches = self.window.apply(self.selector.matches());
         let match_amount = matches.len();
@@ -100,153 +119,159 @@ impl<'a> UI<'a> {
         for (index, match_) in matches.iter().enumerate() {
             // Erase any leftovers in the line
             self.print_match(index == self.selected, match_)?;
-            self.console.move_down()?;
+            queue!(stderr, MoveToNextLine(1))?;
         }
 
         // Clear out any leftover lines
         for _ in 0..(self.match_amount.saturating_sub(match_amount)) {
-            self.console.erase_line()?;
-            self.console.move_down()?;
+            queue!(stderr, Clear(ClearType::CurrentLine), MoveToNextLine(1))?;
         }
         self.match_amount = match_amount;
 
-        self.console.restore_caret_position()?;
+        queue!(stderr, RestorePosition)?;
 
-        io::stdout().flush()?;
+        stderr.flush()?;
 
         Ok(())
     }
 
-    pub fn mainloop(&mut self) -> io::Result<()> {
-        {
-            self.print_prompt()?;
-            self.print_items()?;
+    pub fn mainloop(mut self) -> crossterm::Result<()> {
+        let stderr_lock = io::stderr();
+        let mut stderr = stderr_lock.lock();
 
-            let stdout = io::stdout();
+        self.print_prompt()?;
+        self.print_items()?;
 
-            let mut pattern = String::new();
-            loop {
-                let c = self.console.read_one_char()?;
+        let mut pattern = String::new();
+        loop {
+            let key = match crossterm::event::read()? {
+                Event::Key(evt) => evt,
+                Event::Mouse(_) | Event::Resize(_, _) => continue,
+            };
 
-                // this lock is reentrant, we can hold it as many times as we want
-                let mut stdout_lock = stdout.lock();
-
-                match c {
-                    // If the user inputs Ctrl-C ...
-                    Console::CTRL_C => {
-                        // ... bail out!
-                        break;
-                    }
-
-                    // If the user inputs a backspace ...
-                    Console::BACKSPACE => {
-                        // ... remove the latest character and relay the change to the selector ...
-                        pattern.pop();
-                        self.selector.set_pattern(&pattern);
-
-                        // ... then clear out the prompt line ...
-                        self.console.erase_line()?;
-
-                        // ... and print it out again ...
-                        self.print_prompt()?;
-
-                        write!(stdout_lock, "{}", pattern)?;
-                        stdout_lock.flush()?;
-
-                        // ... then print out the new matches
-                        self.print_items()?;
-                    }
-
-                    // ESCape sequence
-                    //
-                    // Arrow keys are represented as \033[ followed by any of A, B, C or D that each
-                    // correspond to up, down, right and left
-                    Console::ESC => {
-                        assert_eq!(self.console.read_one_char()?, b'[');
-
-                        let matches = self.window.apply(self.selector.matches());
-
-                        // If we've pressed an arrow, vary the selected index accordingly ...
-                        match self.console.read_one_char()? {
-                            // We're going vertically
-                            c @ b'A' | c @ b'B' => {
-                                // Draw the previously selected line as unselected
-                                self.console.save_caret_position()?;
-                                self.console.move_down_n(self.selected + 1)?;
-                                self.print_match(false, &matches[self.selected])?;
-                                self.console.restore_caret_position()?;
-
-                                // Move the selection
-                                if c == b'A' {
-                                    // We're going up
-                                    if self.selected == 0 {
-                                        // If we're already at the top of the screen, scroll up
-                                        self.window.scroll_up();
-                                        self.print_items()?;
-                                        continue;
-                                    }
-
-                                    self.selected -= 1;
-                                } else {
-                                    // We're going down
-                                    // If we're already at the end of the list, scroll down
-                                    if self.selected == self.match_amount.saturating_sub(1) {
-                                        self.window.scroll_down();
-                                        self.print_items()?;
-                                        continue;
-                                    }
-
-                                    self.selected += 1;
-                                }
-
-                                // Draw the new selected line
-                                self.console.save_caret_position()?;
-                                self.console.move_down_n(self.selected + 1)?;
-                                self.print_match(true, &matches[self.selected])?;
-                                self.console.restore_caret_position()?;
-
-                                // Update the display
-                                io::stdout().flush()?;
-                            }
-
-                            _ => {}
-                        }
-                    }
-
-                    // Enter
-                    b'\r' => {
-                        break;
-                    }
-
-                    // If the character is printable ...
-                    c if c >= b' ' && c <= b'~' => {
-                        // ... push it to the pattern and relay the change to the selector ...
-                        pattern.push(c as char);
-                        self.selector.set_pattern(&pattern);
-
-                        // ... echo it to the user ...
-                        write!(stdout_lock, "{}", c as char)?;
-                        stdout_lock.flush()?;
-
-                        // ... and print out the new matches
-                        self.print_items()?;
-                    }
-
-                    // Any other control characters are ignored
-                    c => eprintln!("control char {:?}", c),
+            match key.code {
+                KeyCode::Enter | KeyCode::Esc => {
+                    break;
                 }
+
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    break;
+                }
+
+                // If the user inputs a backspace ...
+                KeyCode::Backspace => {
+                    // ... remove the latest character and relay the change to the selector ...
+                    pattern.pop();
+                    self.selector.set_pattern(&pattern);
+
+                    // ... then clear out the prompt line ...
+                    queue!(stderr, Clear(ClearType::CurrentLine), MoveToColumn(0))?;
+
+                    // ... and print it out again ...
+                    self.print_prompt()?;
+
+                    queue!(stderr, Print(&pattern))?;
+
+                    // ... then print out the new matches
+                    self.print_items()?;
+
+                    stderr.flush()?;
+                }
+
+                key @ KeyCode::Up | key @ KeyCode::Down => {
+                    let matches = self.window.apply(self.selector.matches());
+
+                    // Draw the previously selected line as unselected
+                    queue!(
+                        io::stderr(),
+                        SavePosition,
+                        MoveToNextLine((self.selected + 1) as u16)
+                    )?;
+                    self.print_match(false, &matches[self.selected])?;
+                    queue!(io::stderr(), RestorePosition)?;
+
+                    // Move the selection
+                    if key == KeyCode::Up {
+                        // We're going up
+                        if self.selected == 0 {
+                            // If we're already at the top of the screen, scroll up
+                            self.window.scroll_up();
+                            self.print_items()?;
+                            continue;
+                        }
+
+                        self.selected -= 1;
+                    } else {
+                        // We're going down
+                        // If we're already at the end of the list, scroll down
+                        if self.selected == self.match_amount.saturating_sub(1) {
+                            self.window.scroll_down();
+                            self.print_items()?;
+                            stderr.flush()?;
+                            continue;
+                        }
+
+                        self.selected += 1;
+                    }
+
+                    // Draw the new selected line
+                    queue!(
+                        stderr,
+                        SavePosition,
+                        MoveToNextLine((self.selected + 1) as u16)
+                    )?;
+                    self.print_match(true, &matches[self.selected])?;
+                    queue!(stderr, RestorePosition)?;
+
+                    // Update the display
+                    stderr.flush()?;
+                }
+
+                // If the character is printable ...
+                KeyCode::Char(ch) => {
+                    // ... push it to the pattern and relay the change to the selector ...
+                    pattern.push(ch);
+                    self.selector.set_pattern(&pattern);
+
+                    // ... echo it to the user ...
+                    queue!(stderr, Print(ch))?;
+
+                    // ... and print out the new matches
+                    self.print_items()?;
+
+                    stderr.flush()?;
+                }
+
+                KeyCode::Left
+                | KeyCode::Right
+                | KeyCode::Home
+                | KeyCode::End
+                | KeyCode::PageUp
+                | KeyCode::PageDown
+                | KeyCode::Tab
+                | KeyCode::BackTab
+                | KeyCode::Delete
+                | KeyCode::Insert
+                | KeyCode::F(_)
+                | KeyCode::Null => {}
             }
-        } // exit raw mode
+        }
 
         if let Some(Match { item, .. }) = self.selector.matches().get(self.selected) {
-            self.console.erase_line()?;
-            self.console.save_caret_position()?;
+            queue!(
+                stderr,
+                Clear(ClearType::CurrentLine),
+                MoveToColumn(0),
+                SavePosition
+            )?;
             for _ in 0..self.match_amount {
-                self.console.move_down()?;
-                self.console.erase_line()?;
+                queue!(stderr, MoveToNextLine(1), Clear(ClearType::CurrentLine))?;
             }
-            self.console.restore_caret_position()?;
-            writeln!(self.console, "{}", item)?;
+            queue!(stderr, RestorePosition)?;
+            stderr.flush()?;
+
+            // NB: This prints to stdout, not to the console
+            println!("{}", item);
         }
 
         Ok(())
