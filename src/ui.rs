@@ -181,6 +181,10 @@ impl<'a> UI<'a> {
                 key @ KeyCode::Up | key @ KeyCode::Down => {
                     let matches = self.window.apply(self.selector.matches());
 
+                    if matches.is_empty() {
+                        continue;
+                    }
+
                     // Draw the previously selected line as unselected
                     queue!(
                         io::stderr(),
