@@ -1,10 +1,13 @@
-use std::io::{self, prelude::*};
+use std::{
+    cmp::{max, min},
+    io::{self, prelude::*},
+};
 
 use crate::selector::{Match, Selector};
 use crate::sliding_window::SlidingWindow;
 
 use crossterm::{
-    cursor::{MoveToColumn, MoveToNextLine, RestorePosition, SavePosition},
+    cursor::{MoveToColumn, MoveToNextLine, MoveToPreviousLine, RestorePosition, SavePosition},
     event::{Event, KeyCode, KeyModifiers},
     queue,
     style::{Attribute, Color, ContentStyle, Print, PrintStyledContent},
@@ -33,8 +36,24 @@ fn merge(a: ContentStyle, b: ContentStyle) -> ContentStyle {
     }
 }
 
+fn calculate_window_size() -> crossterm::Result<usize> {
+    let (_, row) = crossterm::cursor::position()?;
+    let (_, h) = crossterm::terminal::size()?;
+
+    let below = (h - (row + 1)) as usize;
+
+    let stderr_lock = io::stderr();
+    let mut stderr = stderr_lock.lock();
+    for _ in below..2 {
+        queue!(stderr, MoveToPreviousLine(1), Clear(ClearType::CurrentLine))?;
+    }
+    stderr.flush()?;
+
+    Ok(min(max(below, 2), 20))
+}
+
 impl<'a> UI<'a> {
-    pub fn new(selector: Selector<'a>) -> io::Result<Self> {
+    pub fn new(selector: Selector<'a>) -> crossterm::Result<Self> {
         Ok(Self {
             prompt: "> ".to_owned(),
 
@@ -43,7 +62,7 @@ impl<'a> UI<'a> {
 
             selected: 0,
 
-            window: SlidingWindow::new(20),
+            window: SlidingWindow::new(calculate_window_size()?),
 
             selected_style: ContentStyle::new().background(Color::AnsiValue(1)),
             highlight_style: ContentStyle::new()
