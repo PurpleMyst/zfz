@@ -285,7 +285,9 @@ impl<'a> UI<'a> {
 
         disable_raw_mode()?;
 
-        if let Some(Match { item, .. }) = self.selector.matches().get(self.selected) {
+        if let Some(Match { item, .. }) =
+            (self.window.apply(self.selector.matches())).get(self.selected)
+        {
             queue!(
                 stderr,
                 Clear(ClearType::CurrentLine),
