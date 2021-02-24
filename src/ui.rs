@@ -197,6 +197,7 @@ impl<'a> UI<'a> {
                             // If we're already at the top of the screen, scroll up
                             self.window.scroll_up();
                             self.print_items()?;
+                            stderr.flush()?;
                             continue;
                         }
 
