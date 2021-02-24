@@ -1,6 +1,11 @@
+use std::borrow::Borrow;
+
+use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
+
 #[derive(Debug, Clone, Copy)]
 pub enum SelectorMode {
     FixedString,
+    Fuzzy,
 }
 
 // TODO: It might be interesting to use Pin<_> to make this own its items.
@@ -48,6 +53,22 @@ impl<'a> Selector<'a> {
                     })
                 })
                 .collect(),
+
+            SelectorMode::Fuzzy => {
+                let matcher = SkimMatcherV2::default();
+
+                self.items
+                    .iter()
+                    .filter_map(|item| {
+                        let (_, indices) = matcher.fuzzy_indices(item, pattern)?;
+
+                        Some(Match {
+                            item,
+                            highlight: indices.into_iter().map(|idx| (idx, idx + 1)).collect(),
+                        })
+                    })
+                    .collect()
+            }
         }
     }
 }
