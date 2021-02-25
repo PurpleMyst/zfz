@@ -208,12 +208,12 @@ impl<'a> UI<'a> {
 
                     // Draw the previously selected line as unselected
                     queue!(
-                        io::stderr(),
+                        stderr,
                         SavePosition,
                         MoveToNextLine((self.selected + 1) as u16)
                     )?;
                     self.print_match(false, &matches[self.selected])?;
-                    queue!(io::stderr(), RestorePosition)?;
+                    queue!(stderr, RestorePosition)?;
 
                     // Move the selection
                     if key == KeyCode::Up {
