@@ -199,7 +199,7 @@ impl<'a> UI<'a> {
                     stderr.flush()?;
                 }
 
-                key @ KeyCode::Up | key @ KeyCode::Down => {
+                keycode @ KeyCode::Up | keycode @ KeyCode::Down => {
                     let matches = self.window.apply(self.selector.matches());
 
                     if matches.is_empty() {
@@ -216,7 +216,7 @@ impl<'a> UI<'a> {
                     queue!(stderr, RestorePosition)?;
 
                     // Move the selection
-                    if key == KeyCode::Up {
+                    if keycode == KeyCode::Up {
                         // We're going up
                         if self.selected == 0 {
                             // If we're already at the top of the screen, scroll up
